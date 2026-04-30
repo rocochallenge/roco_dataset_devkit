@@ -1,0 +1,14 @@
+# Default simulation data-generation configuration.
+#
+# scripts/generate_dataset.py can read this file when PyYAML is installed.
+
+task: Template-Galaxea-Lab-External-Direct-v0
+num_episodes: 10
+num_envs: 1
+seed: 0
+output_dir: data/sim/raw
+record_freq: 5
+enable_cameras: true
+headless: true
+no_action: false
+

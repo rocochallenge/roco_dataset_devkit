@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roco-dataset-devkit"
+version = "0.1.0"
+description = "Dataset loading, export, inspection, and evaluation tools for RoCo Gearbox Assembly episodes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "RoCo Challenge Team" }
+]
+keywords = ["robotics", "dataset", "benchmark", "hdf5", "bimanual manipulation"]
+dependencies = [
+  "numpy>=1.23",
+  "h5py>=3.8"
+]
+
+[project.optional-dependencies]
+download = ["huggingface_hub>=0.22"]
+visualization = ["Pillow>=9", "opencv-python>=4", "matplotlib>=3"]
+generation = ["PyYAML>=6.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+roco-load-dataset = "examples.load_dataset:main"
+roco-download-dataset = "scripts.download_dataset:main"
+roco-export-episode = "scripts.export_episode:main"
+roco-generate-dataset = "scripts.generate_dataset:main"
+roco-inspect-dataset = "tools.inspect_dataset:main"
+roco-review-hdf5 = "tools.review_hdf5:main"
+roco-evaluate-benchmark = "evaluation.evaluate_benchmark:main"
+roco-preview-episode = "visualization.preview_episode:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["data_loader*", "evaluation*", "examples*", "scripts*", "tools*", "visualization*"]
+exclude = ["source*"]
