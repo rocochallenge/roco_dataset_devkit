@@ -31,7 +31,8 @@ import isaaclab.envs.mdp as mdp
 
 import isaacsim.core.utils.torch as torch_utils
 
-from Galaxea_Lab_External.robots import GalaxeaRulePolicy
+# Rule-policy class is read from cfg (see ACTIVE_ROBOT_BUNDLE) so this env
+# works for both R1 and R1_Lite without import-level coupling.
 from isaaclab.sensors import Camera
 
 import h5py
@@ -411,10 +412,11 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
 
         num_envs = self.scene.num_envs
         for env_idx in range(num_envs):
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/left_gripper_link1/collisions", "/World/Materials/gripper_material")
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/left_gripper_link2/collisions", "/World/Materials/gripper_material")  
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/right_gripper_link1/collisions", "/World/Materials/gripper_material")
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/right_gripper_link2/collisions", "/World/Materials/gripper_material")
+            for link_name in self.cfg.robot_bundle.gripper_collision_link_names:
+                sim_utils.bind_physics_material(
+                    f"/World/envs/env_{env_idx}/Robot/{link_name}/collisions",
+                    "/World/Materials/gripper_material",
+                )
 
         gear_mat_cfg = physics_materials_cfg.RigidBodyMaterialCfg(
             static_friction=self.cfg.gears_friction_coefficient,
@@ -442,6 +444,13 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
         for env_idx in range(num_envs):
             sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Table/table/body_whiteLarge", "/World/Materials/table_material")
         
+    # DEBUG: when this dict has an entry for an object name, that object is placed
+    # at the fixed world (x, y) given here instead of being randomized. Set to {}
+    # (or remove a key) to re-enable randomization for that object. Useful for
+    # repeatable IK reach debugging — gear_1 is positioned in the left arm's
+    # natural workspace so the first pickup is unambiguous.
+    DEBUG_FIXED_OBJECT_XY: dict[str, tuple[float, float]] = {}
+
     def _randomize_object_positions(self, object_list: list, object_names: list,
                               safety_margin: float = 0.02, max_attempts: int = 1000):
         """Randomize positions of objects on table without overlapping
@@ -500,6 +509,14 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
 
             # Generate non-overlapping positions for each environment
             for env_idx in range(num_envs):
+                # DEBUG: skip random sampling when a fixed XY is configured.
+                if obj_name in self.DEBUG_FIXED_OBJECT_XY:
+                    fx, fy = self.DEBUG_FIXED_OBJECT_XY[obj_name]
+                    pos = torch.tensor([fx, fy, 0.92], device=self.device)
+                    root_state[env_idx, :3] = pos
+                    placed_objects[env_idx].append((pos, obj_name))
+                    continue
+
                 position_found = False
 
                 for attempt in range(max_attempts):
@@ -512,7 +529,7 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
                         # x = 0.26 + self.cfg.x_offset
                         # y = 0.0
                     if obj_name == "planetary_carrier":
-                        x = 0.4 + self.cfg.x_offset 
+                        x = 0.3 + self.cfg.x_offset 
                         y = 0.0
                     elif obj_name == "sun_planetary_gear_1":
                         y = torch.rand(1, device=self.device).item() * 0.4
@@ -572,7 +589,7 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        self.rule_policy = GalaxeaRulePolicy(sim_utils.SimulationContext.instance(), self.scene, self.obj_dict)
+        self.rule_policy = self.cfg.rule_policy_class(sim_utils.SimulationContext.instance(), self.scene, self.obj_dict)
         self.initial_root_state = None
 
         self.env_step_action = None
@@ -609,6 +626,10 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
 
        
         self.save_hdf5_file_name = '../data/data_' + datetime.now().strftime("%Y%m%d_%H%M%S") + '.hdf5'
+
+        # If the folder is not exist, create it
+        if not os.path.exists('../data'):
+            os.makedirs('../data')
 
 
         self.initial_root_state = self._randomize_object_positions([self.planetary_carrier, self.ring_gear, 
@@ -650,12 +671,12 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
         self.robot.set_joint_position_target(joint_pos, self._joint_idx, env_ids)
 
         # Write the default torso joint position to simulation
-        self.robot.write_joint_position_to_sim(torch.tensor([self.cfg.initial_torso_joint1_pos, self.cfg.initial_torso_joint2_pos, self.cfg.initial_torso_joint3_pos], device=self.device), self._torso_joint_idx, env_ids)
+        self.robot.write_joint_position_to_sim(torch.tensor(list(self.cfg.initial_torso_pos), device=self.device), self._torso_joint_idx, env_ids)
 
         # Set torso joint position limit
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint1_pos, self.cfg.initial_torso_joint1_pos], device=self.device), self._torso_joint1_idx, env_ids)
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint2_pos, self.cfg.initial_torso_joint2_pos], device=self.device), self._torso_joint2_idx, env_ids)
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint3_pos, self.cfg.initial_torso_joint3_pos], device=self.device), self._torso_joint3_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[0], self.cfg.initial_torso_pos[0]], device=self.device), self._torso_joint1_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[1], self.cfg.initial_torso_pos[1]], device=self.device), self._torso_joint2_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[2], self.cfg.initial_torso_pos[2]], device=self.device), self._torso_joint3_idx, env_ids)
 
 
         # self.head_camera.reset(env_ids)
@@ -1027,5 +1048,3 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
         end_time = time.time()
         # print(f"Record data time cost: {end_time - start_time} seconds")
             
-
-       

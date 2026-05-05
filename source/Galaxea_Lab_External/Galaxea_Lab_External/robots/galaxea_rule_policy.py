@@ -76,12 +76,10 @@ class GalaxeaRulePolicy:
         # self.target_position_right = torch.tensor([0.3864, -0.5237, 1.1475], device=self.device)
         # self.target_orientation_right = torch.tensor([0.0, -1.0, 0.0, 0.0], device=self.device)
 
-        self.initial_pos_left = torch.tensor([-20.0 / 180.0 * math.pi, 100.6 / 180.0 * math.pi,
-                                         -24.0 / 180.0 * math.pi, 17.8 / 180.0 * math.pi,
-                                         38.7 / 180.0 * math.pi, 20.1 / 180.0 * math.pi], device=self.device)
-        self.initial_pos_right = torch.tensor([-20.0 / 180.0 * math.pi, 100.6 / 180.0 * math.pi,
-                                         -22.0 / 180.0 * math.pi, -40.0 / 180.0 * math.pi,
-                                         -67.6 / 180.0 * math.pi, 18.1 / 180.0 * math.pi], device=self.device)
+        # Sourced from the active robot's ArticulationCfg.init_state.joint_pos via default_joint_pos.
+        robot = self.scene["robot"]
+        self.initial_pos_left = robot.data.default_joint_pos[0, self.left_arm_entity_cfg.joint_ids].clone()
+        self.initial_pos_right = robot.data.default_joint_pos[0, self.right_arm_entity_cfg.joint_ids].clone()
 
         self.num_gripper_joints = None
 
@@ -637,15 +635,26 @@ class GalaxeaRulePolicy:
         target_position[:, 2] += obj_height_offset
 
         target_position += torch.tensor([self.TCP_offset_x, 0.0, self.TCP_offset_z], device=self.sim.device)
-        
+
         target_position_h = target_position + torch.tensor([0.0, 0.0, self.lifting_height], device=self.sim.device)
 
-        target_orientation = torch.tensor([[0.0, -1.0, 0.0, 0.0]], device=self.sim.device)
+        # Use carrier-relative orientation composed with [0, 1, 0, 0] (180-deg
+        # around Y) — matches the rotation used in pickup so the wrist doesn't
+        # have to twist 180-around-Z between phases. Previous static
+        # [0, -1, 0, 0] (180-X) pointed the gripper down too, but with a
+        # different roll, leaving the IK in a less-reachable config at mount.
+        carrier_quat = self.planetary_carrier.data.root_state_w[:, 3:7].clone()
+        target_orientation, _ = torch_utils.tf_combine(
+            carrier_quat,
+            torch.zeros((carrier_quat.shape[0], 3), device=self.sim.device),
+            torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=self.sim.device),
+            torch.tensor([[0.0, 0.0, 0.0]], device=self.sim.device),
+        )
 
         if gear_id == 6:
             # Rotate the target orientation 180 degrees around the y-axis
             target_orientation, target_position = torch_utils.tf_combine(
-                self.current_target_orientation, target_position, 
+                self.current_target_orientation, target_position,
                 torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=self.sim.device), torch.tensor([[0.0, 0.0, 0.0]], device=self.sim.device)
             )
 
@@ -733,7 +742,17 @@ class GalaxeaRulePolicy:
         target_position += torch.tensor([self.TCP_offset_x, 0.0, self.TCP_offset_z], device=self.sim.device)
         
         target_position_h = target_position + torch.tensor([0.0, 0.0, self.lifting_height], device=self.sim.device)
-        target_orientation = torch.tensor([[0.0, -1.0, 0.0, 0.0]], device=self.sim.device)
+
+        # Use carrier-relative orientation composed with [0, 1, 0, 0] (180-deg
+        # around Y) — matches the rotation used in pickup so the wrist doesn't
+        # have to twist 180-around-Z between phases.
+        carrier_quat = self.planetary_carrier.data.root_state_w[:, 3:7].clone()
+        target_orientation, _ = torch_utils.tf_combine(
+            carrier_quat,
+            torch.zeros((carrier_quat.shape[0], 3), device=self.sim.device),
+            torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=self.sim.device),
+            torch.tensor([[0.0, 0.0, 0.0]], device=self.sim.device),
+        )
 
         target_position_h_down = target_position + torch.tensor([0.0, 0.0, mount_height_offset], device=self.sim.device)
 

@@ -31,7 +31,7 @@ import isaaclab.envs.mdp as mdp
 
 import isaacsim.core.utils.torch as torch_utils
 
-from Galaxea_Lab_External.robots import RecoveryRulePolicy
+# Rule-policy class is read from cfg (see ACTIVE_ROBOT_BUNDLE.recovery_rule_policy_class).
 from isaaclab.sensors import Camera
 
 import h5py
@@ -420,10 +420,11 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
 
         num_envs = self.scene.num_envs
         for env_idx in range(num_envs):
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/left_gripper_link1/collisions", "/World/Materials/gripper_material")
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/left_gripper_link2/collisions", "/World/Materials/gripper_material")  
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/right_gripper_link1/collisions", "/World/Materials/gripper_material")
-            sim_utils.bind_physics_material(f"/World/envs/env_{env_idx}/Robot/right_gripper_link2/collisions", "/World/Materials/gripper_material")
+            for link_name in self.cfg.robot_bundle.gripper_collision_link_names:
+                sim_utils.bind_physics_material(
+                    f"/World/envs/env_{env_idx}/Robot/{link_name}/collisions",
+                    "/World/Materials/gripper_material",
+                )
 
         gear_mat_cfg = physics_materials_cfg.RigidBodyMaterialCfg(
             static_friction=self.cfg.gears_friction_coefficient,
@@ -750,7 +751,7 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        self.rule_policy = RecoveryRulePolicy(sim_utils.SimulationContext.instance(), self.scene, self.obj_dict, self.cfg.initial_assembly_state)
+        self.rule_policy = self.cfg.rule_policy_class(sim_utils.SimulationContext.instance(), self.scene, self.obj_dict, self.cfg.initial_assembly_state)
         self.initial_root_state = None
 
         self.env_step_action = None
@@ -864,12 +865,12 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
         self.robot.set_joint_position_target(joint_pos, self._joint_idx, env_ids)
 
         # Write the default torso joint position to simulation
-        self.robot.write_joint_position_to_sim(torch.tensor([self.cfg.initial_torso_joint1_pos, self.cfg.initial_torso_joint2_pos, self.cfg.initial_torso_joint3_pos], device=self.device), self._torso_joint_idx, env_ids)
+        self.robot.write_joint_position_to_sim(torch.tensor(list(self.cfg.initial_torso_pos), device=self.device), self._torso_joint_idx, env_ids)
 
         # Set torso joint position limit
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint1_pos, self.cfg.initial_torso_joint1_pos], device=self.device), self._torso_joint1_idx, env_ids)
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint2_pos, self.cfg.initial_torso_joint2_pos], device=self.device), self._torso_joint2_idx, env_ids)
-        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_joint3_pos, self.cfg.initial_torso_joint3_pos], device=self.device), self._torso_joint3_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[0], self.cfg.initial_torso_pos[0]], device=self.device), self._torso_joint1_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[1], self.cfg.initial_torso_pos[1]], device=self.device), self._torso_joint2_idx, env_ids)
+        self.robot.write_joint_position_limit_to_sim(torch.tensor([self.cfg.initial_torso_pos[2], self.cfg.initial_torso_pos[2]], device=self.device), self._torso_joint3_idx, env_ids)
 
 
 
@@ -1133,5 +1134,3 @@ class GalaxeaLabExternalEnv(DirectRLEnv):
         end_time = time.time()
         # print(f"Record data time cost: {end_time - start_time} seconds")
             
-
-       

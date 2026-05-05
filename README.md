@@ -1,8 +1,10 @@
 # RoCo Dataset Devkit
 
-Dataset loading, inspection, conversion, and preview tools for RoCo robotic collaborative gearbox assembly episodes.
+Dataset loading, inspection, conversion, generation, and preview tools for RoCo robotic collaborative gearbox assembly episodes.
 
-This repository is scoped as a dataset/devkit package. It is intended for users who want to read RoCo HDF5 episodes, convert raw exports into a stable public schema, inspect dataset metadata, or create quick visual previews without launching Isaac Sim.
+RoCo is a cross-embodiment gearbox-assembly dataset: the public release includes demonstrations (in both simulation and real-world) collected across the Galaxea R1 and R1 Lite embodiments, with matching RGBD observations, joint states, and actions for learning policies that should transfer across robot morphologies.
+
+This repository is scoped as a dataset/devkit package. It is intended for users who want to read RoCo HDF5 episodes, convert raw exports into a stable public schema, inspect dataset metadata, create quick visual previews without launching Isaac Sim, or collect additional simulator episodes with the included rule-based automation scripts.
 
 For the original benchmark environments, challenge baselines, Isaac Lab task definitions, and competition execution instructions, use the original benchmark repository:
 
@@ -17,7 +19,9 @@ The original RoCo Challenge page is available at [RoCo Challenge@AAAI 2026](http
 - HDF5 data-loading utilities in `data_loader/` that work without Isaac Lab or Isaac Sim.
 - A normalized episode interface for raw HDF5 files and devkit-standard HDF5 episodes.
 - CLI examples for loading, exporting, inspecting, and previewing episode files.
-- Documentation for the standard dataset schema and optional simulation data generation entry point.
+- Documentation for the standard dataset schema and simulation data generation entry point.
+- Cross-embodiment simulation support for both R1 and R1 Lite through robot bundles, robot-specific rule policies, and reusable task environments.
+- Automatic rule-based data collection scripts that can keep generating high-quality additional episodes beyond the public dataset release.
 - Python package metadata so the devkit can be installed in editable mode and used through `roco-*` commands.
 
 ## Repository Layout
@@ -92,6 +96,8 @@ https://huggingface.co/datasets/rocochallenge2025/rocochallenge2025
 ```
 
 The Hugging Face dataset card describes the release as gearbox assembly demonstrations with RGBD observations from three views, joint states, and actions at 20 Hz. The full release is large, about 2.32 TB, so download it to external storage when needed.
+
+The hosted files are the public release, not the limit of the dataset. RoCo is designed to be extensible: after installing the generation dependencies, users can collect additional high-quality simulation episodes automatically with the same rule-based agents used by the benchmark environments. The current devkit includes R1 Lite automation support in addition to the original R1 pipeline, so new data can be generated across embodiments and appended to local training sets without a fixed episode cap.
 
 Dataset parts:
 
@@ -200,6 +206,23 @@ roco-export-episode \
 ```
 
 The exported standard schema uses `/action`, `/observations/qpos`, `/observations/qvel`, `/observations/images/<camera>`, optional `/observations/depth/<camera>`, and `/timestamp`.
+
+## Automatic Data Generation
+
+The devkit includes an Isaac Lab generation entry point for collecting new raw HDF5 episodes:
+
+```bash
+roco-generate-dataset \
+  --task Template-Galaxea-Lab-External-Direct-v0 \
+  --num-episodes 100 \
+  --output-dir data/sim/raw_r1lite \
+  --enable_cameras \
+  --headless
+```
+
+Generation uses the active robot bundle in `Galaxea_Lab_External.robots.robot_bundles`. The current bundle is R1 Lite, and the added `R1LiteRulePolicy` / `R1LiteRecoveryRulePolicy` paths allow rule-based scripted agents to collect and save R1 Lite episodes automatically. Switch the active bundle to R1 when collecting the same task family on the original R1 embodiment.
+
+Large local collections can be produced by increasing `--num-episodes` and running multiple jobs as compute and storage allow. Convert generated raw files into the public schema with `roco-export-episode` before mixing them with downloaded release data.
 
 ## Inspection and Preview
 
